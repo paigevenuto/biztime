@@ -2,6 +2,7 @@ const express = require("express");
 const ExpressError = require("../expressError");
 const router = express.Router();
 const db = require("../db");
+const slugify = require("slugify");
 
 router.get("", async function (req, res, next) {
   try {
@@ -16,27 +17,33 @@ router.get("/:code", async function (req, res, next) {
   try {
     let results = await db.query(
       `
-        SELECT code, name, description 
-        FROM companies 
-        WHERE code=$1
+        SELECT c.code, c.name, c.description, i.id
+        FROM companies AS c
+        LEFT JOIN invoices AS i
+        ON c.code = i.comp_code
+        WHERE c.code=$1
       `,
       [req.params.code]
     );
-    let invoices = await db.query(
+    let industries = await db.query(
       `
-          SELECT id
-          FROM invoices
-          WHERE comp_code=$1
-          `,
-      [results.rows[0].code]
+        SELECT ind.industry
+        FROM comp_industries AS ci
+        LEFT JOIN industries AS ind
+        ON ci.indust_code =  ind.code
+        WHERE ci.comp_code=$1
+    `,
+      [req.params.code]
     );
-    invoices = Object.keys(invoices.rows).map((x) => x * 1);
     if (!results.rowCount) {
       const err = new ExpressError("Not Found", 404);
       return next(err);
     }
+    let { code, name, description, indust_code } = results.rows[0];
+    let invoices = results.rows.map((i) => i.id);
+    industries = industries.rows.map((i) => i.industry);
     return res.json({
-      company: { ...results.rows[0], invoices: [...invoices] },
+      company: { code, name, description, invoices, industries },
     });
   } catch (err) {
     return next(err);
@@ -45,7 +52,8 @@ router.get("/:code", async function (req, res, next) {
 
 router.post("", async function (req, res, next) {
   try {
-    let { code, name, description } = req.body;
+    let { name, description } = req.body;
+    let code = slugify(name, { lower: true, strict: true });
     let results = await db.query(
       `
         INSERT INTO companies (code,name,description)
@@ -54,7 +62,7 @@ router.post("", async function (req, res, next) {
      `,
       [code, name, description]
     );
-    return res.json({ company: results.rows });
+    return res.json({ company: { ...results.rows[0] } });
   } catch (err) {
     return next(err);
   }
@@ -77,7 +85,7 @@ router.put("/:code", async function (req, res, next) {
       const err = new ExpressError("Not Found", 404);
       return next(err);
     }
-    return res.json({ company: results.rows });
+    return res.json({ company: { ...results.rows[0] } });
   } catch (err) {
     return next(err);
   }
@@ -85,7 +93,7 @@ router.put("/:code", async function (req, res, next) {
 
 router.delete("/:code", async function (req, res, next) {
   try {
-    await db.query(
+    let results = await db.query(
       `
         DELETE FROM companies
         WHERE code=$1
