@@ -1,4 +1,4 @@
-\c biztime
+\c biztime_
 
 DROP TABLE IF EXISTS comp_industries;
 DROP TABLE IF EXISTS invoices;
